@@ -1,0 +1,48 @@
+/* styles.css */
+.cat-pill {
+  display:inline-block;
+  padding:.25rem .75rem;
+  border-radius:999px;
+  font-weight:600;
+  text-align: center;
+}
+.cat-blue  { background:#e6f0ff; border:1px solid #6ea8fe; color:#2b4c9e; }
+.cat-green { background:#e9f7ef; border:1px solid #5cb85c; color:#2f6e2f; }
+.cat-yellow{ background:#fff7e0; border:1px solid #f0ad4e; color:#7a4c00; }
+.cat-pink  { background:#fde7ec; border:1px solid #f07ea3; color:#8a2a4a; }
+
+.cat-red {
+  background:#fde2e2;
+  border:1px solid #dc3545;
+  color:#721c24;
+}
+
+.cat-purple {
+  background:#f3e6ff;
+  border:1px solid #6f42c1;
+  color:#3d1361;
+}
+
+.cat-orange {
+  background:#fff3e0;
+  border:1px solid #fd7e14;
+  color:#a14d00;
+}
+
+.cat-teal {
+  background:#e0f7f5;
+  border:1px solid #20c997;
+  color:#0d5c4a;
+}
+
+.cat-gray {
+  background:#f1f3f4;
+  border:1px solid #6c757d;
+  color:#343a40;
+}
+
+.cat-brown {
+  background:#f6ede4;
+  border:1px solid #8b5e3c;
+  color:#4a2c12;
+}

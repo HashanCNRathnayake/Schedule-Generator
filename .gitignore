@@ -1,0 +1,6 @@
+# Environment files
+dev-test
+.env
+/vendor
+/vendor/**
+/vendor/**/*
