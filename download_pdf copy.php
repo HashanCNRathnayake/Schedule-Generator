@@ -7,43 +7,6 @@ session_start();
 
 require __DIR__ . '/db.php';
 
-// ---- NEW: allow export by id directly from DB ----
-if (isset($_GET['id'])) {
-    $exportId = (int)$_GET['id'];
-
-    $stmt = $conn->prepare("SELECT * FROM session_plans WHERE id = ?");
-    $stmt->bind_param('i', $exportId);
-    $stmt->execute();
-    $res = $stmt->get_result();
-    $rowDb = $res->fetch_assoc();
-    $stmt->close();
-
-    if ($rowDb) {
-        $plan = json_decode($rowDb['plan_json'] ?? '[]', true) ?: [];
-        $meta = $plan['meta'] ?? [];
-
-        $rows        = $plan['rows'] ?? [];
-        $userId      = (int)($rowDb['user_id'] ?? ($meta['user_id'] ?? 0));
-        $cohort      = $rowDb['cohort_code']   ?: ($meta['cohort_code']   ?? '');
-        $courseId    = $rowDb['course_id']     ?: ($meta['course_id']     ?? '');
-        $courseCode  = $rowDb['course_code']   ?: ($meta['course_code']   ?? '');
-        $moduleCode  = $rowDb['module_code']   ?: ($meta['module_code']   ?? '');
-        $learningMode = $rowDb['learning_mode'] ?: ($meta['learning_mode'] ?? '');
-        $courseTitle = $rowDb['course_title']  ?: ($meta['course_title']  ?? '');
-
-        $startDate   = $meta['start_date']   ?? '';
-        $days        = $meta['days']         ?? [];
-        $countries   = $meta['countries']    ?? [];
-        $timeSlot    = $meta['time']['slot'] ?? '';
-        $customStart = $meta['time']['custom_start'] ?? '';
-        $customEnd   = $meta['time']['custom_end']   ?? '';
-    } else {
-        http_response_code(404);
-        exit('Schedule not found.');
-    }
-}
-
-
 $rows    = $_POST['rows'] ?? ($_SESSION['generated'] ?? []);
 $cohort  = trim($_POST['cohort_code'] ?? ($_SESSION['selected']['cohort_code'] ?? ''));
 $userId  = (int)($_SESSION['user_id'] ?? 0);
@@ -112,6 +75,7 @@ ob_start();
             border: 1px solid #ffffffff;
             border-bottom: 0;
 
+            /* margin-bottom: 1px; */
         }
 
         /* Meta table (like screenshot) */
@@ -144,6 +108,11 @@ ob_start();
             text-align: left;
         }
 
+        /* .uid {
+            margin: 4px 0 8px 0;
+            font-size: 9px;
+        } */
+
         /* Main table */
         table.schedule {
             width: 100%;
@@ -166,6 +135,39 @@ ob_start();
             background: #f0f0f0;
             font-weight: 700;
         }
+
+        /* Column widths to fit portrait page */
+        /* table.schedule col.c-no {
+            width: 6%;
+        }
+
+        table.schedule col.c-type {
+            width: 12%;
+        }
+
+        table.schedule col.c-details {
+            width: 40%;
+        }
+
+        table.schedule col.c-dur {
+            width: 8%;
+        }
+
+        table.schedule col.c-fac {
+            width: 14%;
+        }
+
+        table.schedule col.c-date {
+            width: 8%;
+        }
+
+        table.schedule col.c-day {
+            width: 5%;
+        }
+
+        table.schedule col.c-time {
+            width: 7%;
+        } */
 
         /* Smaller text in dense columns */
         .auto_col {
@@ -241,8 +243,19 @@ ob_start();
         </tr>
     </table>
 
+    <!-- <p class="uid"><strong>User ID:</strong> <?= htmlspecialchars((string)$userId) ?></p> -->
 
     <table class="schedule">
+        <!-- <colgroup>
+            <col class="c-no">
+            <col class="c-type">
+            <col class="c-details">
+            <col class="c-dur">
+            <col class="c-fac">
+            <col class="c-date">
+            <col class="c-day">
+            <col class="c-time">
+        </colgroup> -->
         <thead>
             <tr>
                 <th class="no short_col">Session<br>No</th>
@@ -279,7 +292,7 @@ $html = ob_get_clean();
 
 $dompdf = new Dompdf();
 $dompdf->loadHtml($html);
-$dompdf->setPaper('A4', 'portrait');
+$dompdf->setPaper('A4', 'portrait'); // <— was 'landscape'
 
 if ($conn && $cohort && $rows) {
     $plan = [

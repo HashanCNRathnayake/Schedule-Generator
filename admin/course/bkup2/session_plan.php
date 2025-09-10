@@ -16,7 +16,7 @@ require __DIR__ . '/../../db.php';
 
 // auth (adjust as needed)
 if (!isset($_SESSION['user_id'])) {
-    header("Location: ../login.php");
+    header("Location: ./../../login.php");
     exit;
 }
 $username = $_SESSION['username'] ?? '';

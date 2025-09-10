@@ -16,7 +16,7 @@ require __DIR__ . '/../lib/schedule_lib.php';
 
 // auth
 if (!isset($_SESSION['user_id'])) {
-    header("Location: ../login.php");
+    header("Location: ./../../login.php");
     exit;
 }
 $username = $_SESSION['username'] ?? '';

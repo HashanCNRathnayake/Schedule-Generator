@@ -1,5 +1,6 @@
 <?php
 // admin/lib/schedule_lib.php
+require_once __DIR__ . '/holiday_lib.php';
 
 if (session_status() !== PHP_SESSION_ACTIVE) session_start();
 
@@ -151,56 +152,44 @@ function fetch_public_holidays_one($countryCode, $year): array
  * @param array $countries     e.g. ['LK','IN']  (multi-select supported)
  * @return DateTime[]          dates for each row (length ~ rows)
  */
-function generate_schedule(array $rows, string $startDate, array $allowedDays, array $countries): array
+function generate_schedule(array $grid, string $startDateYmd, array $days, array $countries): array
 {
-    if (!$rows) return [];
-    $start = new DateTime($startDate);
+    // Map 3-letter day names to indices
+    $dayIdx = array_flip(['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']);
+    $wantDays = array_values(array_filter(
+        array_map(fn($d) => $dayIdx[$d] ?? -1, $days),
+        fn($i) => $i >= 0
+    ));
 
-    // Map to 3-letter week keys
-    $map = [
-        'Monday' => 'Mon',
-        'Tuesday' => 'Tue',
-        'Wednesday' => 'Wed',
-        'Thursday' => 'Thu',
-        'Friday' => 'Fri',
-        'Saturday' => 'Sat',
-        'Sunday' => 'Sun',
-        'Mon' => 'Mon',
-        'Tue' => 'Tue',
-        'Wed' => 'Wed',
-        'Thu' => 'Thu',
-        'Fri' => 'Fri',
-        'Sat' => 'Sat',
-        'Sun' => 'Sun'
-    ];
-    $allowed = [];
-    foreach ($allowedDays as $d) if (isset($map[$d])) $allowed[$map[$d]] = true;
-    if (!$allowed) return [];
+    // Horizon: enough to place all sessions
+    $from = new DateTime($startDateYmd);
+    $to   = (clone $from)->modify('+400 days');
 
-    // Years to fetch
-    $yearsNeeded = [(int)$start->format('Y'), (int)$start->format('Y') + 1];
-    $holidaySets = []; // union across countries
-    foreach (array_unique($yearsNeeded) as $yr) {
-        $holidaySets[$yr] = [];
-        foreach ($countries as $cc) {
-            $set = fetch_public_holidays_one($cc, $yr);
-            foreach ($set as $dateStr => $_) $holidaySets[$yr][$dateStr] = true;
-        }
-    }
-    $isHoliday = function (DateTime $d) use (&$holidaySets) {
-        return isset($holidaySets[(int)$d->format('Y')][$d->format('Y-m-d')]);
-    };
+    // Union of holiday dates (current year only, cached)
+    global $conn; // uses your mysqli from db.php
+    $holSet = holiday_set_between($conn, $countries, $from->format('Y-m-d'), $to->format('Y-m-d'));
 
     $dates = [];
-    $cursor = clone $start;
-    $need = count($rows);
+    $iRow  = 0;
+    $cursor = clone $from;
 
-    while (count($dates) < $need) {
-        if (isset($allowed[$cursor->format('D')]) && !$isHoliday($cursor)) {
-            $dates[] = clone $cursor;
+    while ($iRow < count($grid)) {
+        $dow = (int)$cursor->format('w'); // 0=Sun..6=Sat
+        if (!in_array($dow, $wantDays, true)) {
+            $cursor->modify('+1 day');
+            continue;
         }
+
+        $ymd = $cursor->format('Y-m-d');
+        if (isset($holSet[$ymd])) { // skip holiday (if in any selected country)
+            $cursor->modify('+1 day');
+            continue;
+        }
+
+        $dates[$iRow] = clone $cursor; // return a DateTime object to match ymd() & weekday_name()
+        $iRow++;
         $cursor->modify('+1 day');
-        if ((clone $cursor)->diff($start)->days > 700) break; // safety
     }
+
     return $dates;
 }

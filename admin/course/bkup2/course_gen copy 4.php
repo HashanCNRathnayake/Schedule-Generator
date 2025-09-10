@@ -16,7 +16,7 @@ require __DIR__ . '/../../db.php';
 
 // auth guard (adjust to your app)
 if (!isset($_SESSION['user_id'])) {
-    header("Location: ../login.php");
+    header("Location: ./../../login.php");
     exit;
 }
 

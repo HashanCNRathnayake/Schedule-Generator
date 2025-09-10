@@ -16,7 +16,7 @@ require __DIR__ . '/../../db.php';
 
 // auth guard (adjust to your app)
 if (!isset($_SESSION['user_id'])) {
-    header("Location: /../../login.php");
+    header("Location: ./../../login.php");
     exit;
 }
 
@@ -107,17 +107,17 @@ if (isPost('saveTemplate')) {
         $_SESSION['flash'] = ['type' => 'success', 'message' => "Template saved (#$templateId) with " . count($rows) . " rows."];
 
         // Optional: pass selection to Generate page via GET
-        $to = "/../../index.php?course_id=" . urlencode($course_id)
-            . "&course_code=" . urlencode($course_code)
-            . "&module_code=" . urlencode($module_code)
-            . "&learning_mode=" . urlencode($learning_mode);
-        $_SESSION['selected'] = [
-            'course_id' => $course_id,
-            'course_code' => $course_code,
-            'module_code' => $module_code,
-            'learning_mode' => $learning_mode
-        ];
-        header('Location: ' . $_SERVER['PHP_SELF'] . '/../../index.php');
+        // $to = "/../../index.php?course_id=" . urlencode($course_id)
+        //     . "&course_code=" . urlencode($course_code)
+        //     . "&module_code=" . urlencode($module_code)
+        //     . "&learning_mode=" . urlencode($learning_mode);
+        // $_SESSION['selected'] = [
+        //     'course_id' => $course_id,
+        //     'course_code' => $course_code,
+        //     'module_code' => $module_code,
+        //     'learning_mode' => $learning_mode
+        // ];
+        header('Location: ' . $_SERVER['PHP_SELF'] . '/../../../index.php');
         exit;
     } catch (Throwable $e) {
         $conn->rollback();
