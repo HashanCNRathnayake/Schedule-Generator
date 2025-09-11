@@ -30,6 +30,8 @@ if (isset($_GET['id'])) {
         $moduleCode  = $rowDb['module_code']   ?: ($meta['module_code']   ?? '');
         $learningMode = $rowDb['learning_mode'] ?: ($meta['learning_mode'] ?? '');
         $courseTitle = $rowDb['course_title']  ?: ($meta['course_title']  ?? '');
+        $moduleTitle = $rowDb['module_title']  ?: ($meta['module_title']  ?? '');
+
 
         $startDate   = $meta['start_date']   ?? '';
         $days        = $meta['days']         ?? [];
@@ -53,6 +55,8 @@ $courseCode   = $_POST['course_code']   ?? ($_SESSION['selected']['course_code']
 $moduleCode   = $_POST['module_code']   ?? ($_SESSION['selected']['module_code']   ?? '');
 $learningMode = $_POST['learning_mode'] ?? ($_SESSION['selected']['learning_mode'] ?? '');
 $courseTitle  = $_POST['course_title']  ?? ($_SESSION['selected']['course_title']  ?? '');
+$moduleTitle  = $_POST['module_title']  ?? ($_SESSION['selected']['module_title']  ?? '');
+
 
 $startDate    = $_POST['start_date']    ?? ($_SESSION['meta']['start_date']   ?? '');
 $days         = $_POST['days']          ?? ($_SESSION['meta']['days']         ?? []);
@@ -212,7 +216,7 @@ ob_start();
     <table class="meta-table">
         <tr>
             <th>Module Name:</th>
-            <td><?= htmlspecialchars($moduleCode) ?></td>
+            <td><?= htmlspecialchars('[' . $moduleCode . '] ' . $moduleTitle) ?></td>
         </tr>
         <tr>
             <th>Course Name:</th>
@@ -289,6 +293,7 @@ if ($conn && $cohort && $rows) {
             'course_id'     => $courseId,
             'course_code'   => $courseCode,
             'module_code'   => $moduleCode,
+            'module_title'  => $moduleTitle,
             'learning_mode' => $learningMode,
             'course_title'  => $courseTitle,
             'start_date'    => $startDate,
@@ -306,12 +311,13 @@ if ($conn && $cohort && $rows) {
     $json = json_encode($plan, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
     $sql = "INSERT INTO session_plans
-           (user_id, cohort_code, course_id, course_code, module_code, learning_mode, course_title, plan_json)
-          VALUES (?,?,?,?,?,?,?,?)
+           (user_id, cohort_code, course_id, course_code, module_code, module_title, learning_mode, course_title, plan_json)
+          VALUES (?,?,?,?,?,?,?,?,?)
           ON DUPLICATE KEY UPDATE
             course_id=VALUES(course_id),
             course_code=VALUES(course_code),
             module_code=VALUES(module_code),
+            module_title=VALUES(module_title),
             learning_mode=VALUES(learning_mode),
             course_title=VALUES(course_title),
             plan_json=VALUES(plan_json),
@@ -320,17 +326,18 @@ if ($conn && $cohort && $rows) {
     $stmt = $conn->prepare($sql);
     if ($stmt) {
         $stmt->bind_param(
-            'isssssss',
+            'issssssss',
             $userId,       // i
             $cohort,       // s
             $courseId,     // s
             $courseCode,   // s
             $moduleCode,   // s
+            $moduleTitle,  // s
             $learningMode, // s
             $courseTitle,  // s
             $json          // s  ← bind JSON as a normal string
         );
-        $stmt->send_long_data(7, $json);
+        $stmt->send_long_data(8, $json);
         $stmt->execute();
         $stmt->close();
         $_SESSION['save_msg'] = "Saved plan for cohort {$cohort}.";

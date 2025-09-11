@@ -9,6 +9,10 @@ $baseUrl = $_ENV['BASE_URL'] ?? '/';
 
 // require __DIR__ . '/components/header.php';
 
+require __DIR__ . '/components/header.php';
+require __DIR__ . '/components/navbar.php';
+
+
 
 
 ?>
@@ -25,9 +29,11 @@ $baseUrl = $_ENV['BASE_URL'] ?? '/';
 
 </head>
 
-<body class="bg-light d-flex justify-content-center align-items-center vh-100">
+<!-- <body class="bg-light d-flex justify-content-center align-items-center vh-100"> -->
 
-    <div class="card p-4 shadow-sm" style="width: 100%; max-width: 400px;">
+<body class="bg-light">
+
+    <div class="card p-4 shadow-sm" style="width: 100%; max-width: 400px;margin: auto; margin-top: 5%;">
         <h3 class="mb-3 text-center">🔐 Login</h3>
         <?php
         ob_start();

@@ -23,6 +23,7 @@ $courseCode   = $_POST['course_code']   ?? ($_SESSION['selected']['course_code']
 $moduleCode   = $_POST['module_code']   ?? ($_SESSION['selected']['module_code']   ?? '');
 $learningMode = $_POST['learning_mode'] ?? ($_SESSION['selected']['learning_mode'] ?? '');
 $courseTitle  = $_POST['course_title']  ?? ($_SESSION['selected']['course_title']  ?? '');
+$moduleTitle  = $_POST['module_title']  ?? ($_SESSION['selected']['module_title']  ?? '');
 
 $startDate    = $_POST['start_date']    ?? ($_SESSION['meta']['start_date']   ?? '');
 $days         = $_POST['days']          ?? ($_SESSION['meta']['days']         ?? []);
@@ -55,6 +56,9 @@ if (isset($_GET['id'])) {
         $moduleCode  = $rowDb['module_code']   ?: ($meta['module_code']   ?? '');
         $learningMode = $rowDb['learning_mode'] ?: ($meta['learning_mode'] ?? '');
         $courseTitle = $rowDb['course_title']  ?: ($meta['course_title']  ?? '');
+        $moduleTitle = $rowDb['module_title']  ?: ($meta['module_title']  ?? '');
+
+
 
         $startDate   = $meta['start_date']   ?? '';
         $days        = $meta['days']         ?? [];
@@ -114,7 +118,7 @@ $sheet->getStyle('A1')->applyFromArray([
 // ---- Meta block ----
 $metaStart = 3;
 $labels = [
-    'Module Name:' => $moduleCode,
+    'Module Name:' => $moduleTitle . ($moduleCode ? " ($moduleCode)" : ''),
     'Course Name:' => $courseTitle,
     'Cohort Code:' => $cohort,
     'Mode :'       => $learningMode,

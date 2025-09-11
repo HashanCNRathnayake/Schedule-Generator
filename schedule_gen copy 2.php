@@ -8,6 +8,7 @@ if (!isset($_SESSION['user_id'])) {
   exit;
 }
 
+
 require_once __DIR__ . '/vendor/autoload.php';
 $dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
 $dotenv->load();
@@ -39,7 +40,6 @@ $selected = [
   'learning_mode' => trim($_POST['learning_mode'] ?? ''),
   'course_title'  => trim($_POST['course_title'] ?? ''),
   'cohort_code'   => trim($_POST['cohort_code'] ?? ''),
-  'module_title'  => trim($_POST['module_title'] ?? ''),
 ];
 
 //save module_code etc to session for later use
@@ -191,9 +191,74 @@ if ($grid && isPost('generateSchedule')) {
   }
 }
 
+/* Reflow from a given row downward (same-page postback) */
+if (isPost('reflowDates')) {
+  $startIndex = (int)($_POST['reflow_index'] ?? -1);
+  $startDate  = trim($_POST['reflow_start_date'] ?? ''); // Y-m-d from flatpickr
+  $daysRaw    = (array)($_POST['days'] ?? ($_SESSION['meta']['days'] ?? []));
+  $countriesRaw = (array)($_POST['countries'] ?? ($_SESSION['meta']['countries'] ?? []));
+
+  // normalize days to 3-letter names
+  $days = [];
+  foreach ($daysRaw as $d) {
+    $k = substr(trim($d), 0, 3);
+    if ($k && !in_array($k, $days, true)) $days[] = $k;
+  }
+
+  // normalize countries to uppercase
+  $countries = [];
+  foreach ($countriesRaw as $c) {
+    $k = strtoupper(trim($c));
+    if ($k && !in_array($k, $countries, true)) $countries[] = $k;
+  }
+
+  if ($startIndex >= 0 && $startDate && $grid && !empty($days) && !empty($countries)) {
+    try {
+      // Use the base template rows from session
+      $tail = array_slice($grid, $startIndex); // $grid is [no,type,details,duration] rows
+      $dates = generate_schedule($tail, $startDate, $days, $countries);
+
+      // Ensure we have $generated to write into
+      if (empty($generated)) {
+        foreach ($grid as $row) {
+          [$no, $type, $details, $duration] = $row;
+          $typeNorm  = normalize_session_type($type);
+          $generated[] = [
+            'no'       => $no,
+            'type'     => $typeNorm,
+            'details'  => $details,
+            'duration' => $duration,
+            'faculty'  => faculty_from_type($typeNorm),
+            'date'     => '',
+            'day'      => '',
+            'time'     => '',
+          ];
+        }
+      }
+
+      // Apply new dates/days from startIndex onward
+      foreach ($dates as $offset => $dt) {
+        $i = $startIndex + $offset;
+        $generated[$i]['date'] = ymd($dt);          // Y-m-d
+        $generated[$i]['day']  = weekday_name($dt); // Mon..Sun
+      }
+
+      // Persist for render / PDF
+      $_SESSION['generated'] = $generated;
+
+      // Keep meta for subsequent reflows
+      $_SESSION['meta']['days'] = $days;
+      $_SESSION['meta']['countries'] = $countries;
+    } catch (Throwable $e) {
+      $error = 'Failed to reflow schedule: ' . $e->getMessage();
+    }
+  } else {
+    $error = 'Reflow requires a valid row, date, day pattern, and countries.';
+  }
+}
 
 if (isPost('clearCsv')) {
-  unset($_SESSION['grid_rows'], $_SESSION['generated'], $_SESSION['selected'], $_SESSION['meta']);
+  unset($_SESSION['grid_rows'], $_SESSION['generated'], $_SESSION['selected']);
   header('Location: ' . $_SERVER['PHP_SELF']);
   exit;
 }
@@ -283,9 +348,9 @@ if (isPost('clearCsv')) {
             <button type="button" id="clearSearch" class="btn btn-outline-secondary">&times;</button>
           </div>
           <div id="results" class="list-group"></div>
-          <div id="courseTitle" class="fw-semibold ms-2">
+          <div id="courseTitle" class="fw-semibold mt-2">
             <?php if ($selected['course_title']): ?>
-              <?= h($selected['course_title']) ?>
+              [<?= h($selected['course_title']) ?>]
             <?php endif; ?>
           </div>
         </div>
@@ -294,8 +359,6 @@ if (isPost('clearCsv')) {
         <input type="hidden" name="course_id" id="course_id" value="<?= h($selected['course_id']) ?>">
         <input type="hidden" name="course_code" id="course_code" value="<?= h($selected['course_code']) ?>">
         <input type="hidden" name="course_title" id="course_title" value="">
-        <input type="hidden" name="module_title" value="<?= h($selected['module_title'] ?? '') ?>">
-
 
 
         <div class="col-md-6">
@@ -332,16 +395,14 @@ if (isPost('clearCsv')) {
     <!-- 2) Inputs + Generate -->
     <div class="card mb-4">
       <div class="card-body">
-        <!-- <h5 class="card-title">Step 2 — Inputs</h5> -->
+        <h5 class="card-title">Step 2 — Inputs</h5>
         <form method="post" class="row g-3">
           <!-- carry selection -->
           <input type="hidden" name="course_id" value="<?= h($selected['course_id']) ?>">
           <input type="hidden" name="course_code" value="<?= h($selected['course_code']) ?>">
           <input type="hidden" name="module_code" value="<?= h($selected['module_code']) ?>">
           <input type="hidden" name="learning_mode" value="<?= h($selected['learning_mode']) ?>">
-          <input type="hidden" name="course_title" value="<?= h($selected['course_title']) ?>">
-          <input type="hidden" name="module_title" value="<?= h($selected['module_title'] ?? '') ?>">
-
+          <input type="hidden" name="course_title" id="course_title" value="<?= h($selected['course_title']) ?>">
 
 
           <!-- Cohort code builder -->
@@ -477,13 +538,17 @@ if (isPost('clearCsv')) {
           <div class="flex d-flex flex-inline gap-2">
 
             <form method="post" class="">
-              <button type="submit" name="clearCsv" class="btn btn-secondary">Clear Generated</button>
+              <button type="submit" name="clearCsv" class="btn btn-secondary">Clear Uploaded CSV</button>
             </form>
           </div>
 
         </div>
 
         <form method="post" id="saveForm">
+
+          <input type="hidden" name="reflowDates" id="reflow_flag" value="">
+          <input type="hidden" name="reflow_index" id="reflow_index" value="">
+          <input type="hidden" name="reflow_start_date" id="reflow_start_date" value="">
 
           <!-- carry day pattern & countries so PHP has them on reflow -->
           <?php foreach (($_SESSION['meta']['days'] ?? []) as $d): ?>
@@ -498,9 +563,8 @@ if (isPost('clearCsv')) {
           <input type="hidden" name="course_code" value="<?= h($selected['course_code']) ?>">
           <input type="hidden" name="module_code" value="<?= h($selected['module_code']) ?>">
           <input type="hidden" name="learning_mode" value="<?= h($selected['learning_mode']) ?>">
-          <input type="hidden" name="course_title" value="<?= h($selected['course_title']) ?>">
+          <input type="hidden" name="course_title" id="course_title" value="<?= h($selected['course_title']) ?>">
           <input type="hidden" name="cohort_code" value="<?= h($_POST['cohort_code'] ?? ($_SESSION['selected']['cohort_code'] ?? '')) ?>">
-          <input type="hidden" name="module_title" value="<?= h($selected['module_title'] ?? '') ?>">
 
 
 
@@ -509,7 +573,6 @@ if (isPost('clearCsv')) {
 
             <div class="alert alert-light border d-flex flex-wrap gap-3 align-items-center mb-3">
               <div><strong>Course:</strong> <?= h($selected['course_title'] ?? '-') ?></div>
-              <div><strong>Module:</strong> <?= h($selected['module_title'] ?? '-') ?></div> <!-- NEW -->
               <div><strong>Code:</strong> <?= h($selected['course_code'] ?? '-') ?></div>
               <div><strong>Mode:</strong> <?= h($selected['learning_mode'] ?? '-') ?></div>
               <div><strong>Cohort:</strong> <?= h($_SESSION['selected']['cohort_code'] ?? '-') ?></div>
@@ -596,7 +659,9 @@ if (isPost('clearCsv')) {
     </div>
   </div>
 
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
   <!-- Flatpickr JS -->
   <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 
@@ -609,19 +674,13 @@ if (isPost('clearCsv')) {
     const moduleSelect = document.getElementById('moduleSelect');
     const modeSelect = document.getElementById('modeSelect');
     const modeDetails = document.getElementById('modeDetails');
+    const courseIdInp = document.getElementById('course_id');
+    const courseCodeInp = document.getElementById('course_code');
+    const learningModeInp = document.getElementById('learning_mode');
 
     let lastCourseData = null;
-    // ADD once, near your helpers
-    function debounce(fn, ms = 250) {
-      let t;
-      return (...args) => {
-        clearTimeout(t);
-        t = setTimeout(() => fn(...args), ms);
-      };
-    }
 
-    // REPLACE your searchInput input listener with:
-    searchInput?.addEventListener('input', debounce(async () => {
+    searchInput?.addEventListener('input', async () => {
       const q = searchInput.value.trim();
       if (!q) {
         resultsBox.innerHTML = '';
@@ -634,85 +693,82 @@ if (isPost('clearCsv')) {
                 data-id="${r.course_id}" data-code="${r.course_code}">
             [${r.course_code}] ${r.course_title_external}
         </button>
-      `).join('');
-    }, 250));
-
+    `).join('');
+    });
     clearBtn?.addEventListener('click', () => {
       searchInput.value = '';
       resultsBox.innerHTML = '';
       searchInput.focus();
     });
 
-    // helper and update your event handlers
-    function setAll(name, value) {
-      document.querySelectorAll(`input[name="${name}"]`).forEach(el => el.value = value ?? '');
-    }
-
-
     resultsBox?.addEventListener('click', async e => {
       const btn = e.target.closest('button');
       if (!btn) return;
       resultsBox.innerHTML = '';
       searchInput.value = btn.textContent.trim();
-      setAll('course_id', btn.dataset.id);
-      setAll('course_code', btn.dataset.code);
+      courseIdInp.value = btn.dataset.id;
+      courseCodeInp.value = btn.dataset.code;
 
       const res = await fetch('/schedule_gen/admin/course/get_course_details.php?id=' + btn.dataset.id);
       const data = await res.json();
       lastCourseData = data;
 
       courseTitle.textContent = btn.textContent;
-      // set ALL hidden course_title fields
-      setAll('course_title', courseTitle.textContent.trim());
+      // e.g. "[CS101] Introduction to Computing" -> "Introduction to Computing"
+      // const justTitle = courseTitle.textContent.trim().replace(/^\[[^\]]+\]\s*/, '');
+      // document.getElementById('course_title').value = justTitle;
+
+      document.getElementById('course_title').value = courseTitle.textContent.trim();
 
       moduleSelect.innerHTML = '<option value="">Select a module...</option>' +
-        (data.data.modules || []).map(m =>
-          `<option value="${m.module_code}" data-title="${m.module_title}">
-       ${m.module_title} [${m.module_code}]
-     </option>`
-        ).join('');
+        (data.data.modules || []).map(m => `<option value="${m.module_code}">${m.module_title} [${m.module_code}]</option>`).join('');
       modeSelect.innerHTML = '<option value="">Select a mode...</option>' +
         (data.data.master_learning_modes || []).map((m, i) => `<option value="${i}">${m.mode}</option>`).join('');
-      setAll('learning_mode', '');
-
+      learningModeInp.value = '';
       modeDetails.innerHTML = '';
     });
     modeSelect?.addEventListener('change', function() {
       if (!lastCourseData || this.value === "") {
-        // Clear everywhere if nothing selected
-        setAll('learning_mode', '');
+        learningModeInp.value = "";
         modeDetails.innerHTML = "";
         return;
       }
       const m = lastCourseData.data.master_learning_modes[this.value];
-      setAll('learning_mode', m?.mode || '');
+      learningModeInp.value = m.mode || '';
       modeDetails.innerHTML = `<div class="card card-body p-2">
-        <div><b>Mode:</b> ${m?.mode || ''} |
-        <b>Duration:</b> ${m?.course_duration || ''} |
-        <b>Days/Week:</b> ${m?.days_per_week || ''} |
-        <b>Hours/Day:</b> ${m?.hours_per_day || ''} |
-        <b>Hours/Week:</b> ${m?.hours_per_week || ''}</div>
-      </div>`;
+        <div><b>Mode:</b> ${m.mode || ''} |
+        <b>Duration:</b> ${m.course_duration || ''} |
+        <b>Days/Week:</b> ${m.days_per_week || ''} |
+        <b>Hours/Day:</b> ${m.hours_per_day || ''} |
+        <b>Hours/Week:</b> ${m.hours_per_week || ''}</div>
+    </div>`;
     });
 
+    // Auto Day when Date changes
+    // document.querySelectorAll('.date-input').forEach(input => {
+    //   input.addEventListener('change', function() {
+    //     const dateStr = this.value;
+    //     const dayTargetId = this.dataset.dayTarget;
+    //     if (!dateStr || !dayTargetId) return;
+    //     const d = new Date(dateStr);
+    //     if (isNaN(d)) return;
+    //     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    //     document.getElementById(dayTargetId).value = days[d.getDay()];
+    //   });
+    // });
+
     // Disable slot if custom times filled
-    document.addEventListener('DOMContentLoaded', () => {
-      const s = document.querySelector('input[name="custom_start"]');
-      const e = document.querySelector('input[name="custom_end"]');
-      const slot = document.querySelector('select[name="time_slot"]'); // may not exist (you commented it)
-
+    $(function() {
       function refreshTimeHint() {
-        if (!slot) return;
-        const hasCustom = (s?.value && e?.value);
-        slot.disabled = !!hasCustom;
+        const hasCustom = $('input[name="custom_start"]').val() && $('input[name="custom_end"]').val();
+        $('select[name="time_slot"]').prop('disabled', !!hasCustom);
       }
-
-      s?.addEventListener('input', refreshTimeHint);
-      e?.addEventListener('input', refreshTimeHint);
+      $('input[name="custom_start"], input[name="custom_end"]').on('input', refreshTimeHint);
       refreshTimeHint();
     });
 
     // Cohort code builder
+    // const moduleSelectEl = document.getElementById('moduleSelect');
     const cohortSuffixInput = document.getElementById('cohort_suffix');
     const cohortCodeDisplay = document.getElementById('cohort_code_display');
     const cohortCodeHidden = document.getElementById('cohort_code_hidden');
@@ -724,17 +780,7 @@ if (isPost('clearCsv')) {
       cohortCodeDisplay.value = code;
       cohortCodeHidden.value = code;
     }
-    moduleSelect?.addEventListener('change', function() {
-      const opt = this.selectedOptions?.[0];
-      const moduleCode = opt?.value || '';
-      const moduleTitle = opt?.dataset.title || '';
-
-      // you already have setAll helper from earlier steps
-      setAll('module_code', moduleCode);
-      setAll('module_title', moduleTitle);
-
-      updateCohortCode();
-    });
+    moduleSelect?.addEventListener('change', updateCohortCode);
     cohortSuffixInput?.addEventListener('input', updateCohortCode);
 
     //if cohort suffix has no value, clear cohort code
@@ -749,8 +795,8 @@ if (isPost('clearCsv')) {
 
     // ---- Countries UX (multi-select with badges + search) ----
     (function() {
-      // Use prior selection if present, else default ["SG"]
-      const preselectedCountries = <?= json_encode($_POST['countries'] ?? ($_SESSION['meta']['countries'] ?? ['SG'])) ?>;
+      // Use prior selection if present, else default ["LK"]
+      const preselectedCountries = <?= json_encode($_POST['countries'] ?? ($_SESSION['meta']['countries'] ?? ['LK'])) ?>;
 
       const checks = Array.from(document.querySelectorAll('.country-check'));
       const badgesBox = document.getElementById('selectedCountryBadges');
@@ -774,16 +820,16 @@ if (isPost('clearCsv')) {
 
         // badges
         badgesBox.innerHTML = selected.map(s => `
-          <span class="badge text-bg-primary d-inline-flex align-items-center">
-            ${s.label}
-            <button type="button" class="btn-close btn-close-white btn-sm ms-2 remove-country" data-code="${s.code}" aria-label="Remove"></button>
-          </span>
-        `).join('');
+      <span class="badge text-bg-primary d-inline-flex align-items-center">
+        ${s.label}
+        <button type="button" class="btn-close btn-close-white btn-sm ms-2 remove-country" data-code="${s.code}" aria-label="Remove"></button>
+      </span>
+    `).join('');
 
         // hidden inputs
         hiddenBox.innerHTML = selected.map(s => `
-          <input type="hidden" name="countries[]" value="${s.code}">
-        `).join('');
+      <input type="hidden" name="countries[]" value="${s.code}">
+    `).join('');
 
         // summary + count
         if (selected.length === 0) {
@@ -834,36 +880,36 @@ if (isPost('clearCsv')) {
       });
     })();
 
-    document.addEventListener('DOMContentLoaded', () => {
-      flatpickr("#start_date", {
-        altInput: true,
-        altInputClass: 'form-control', // keep Bootstrap styling
-        altFormat: "d/m/Y", // what user sees
-        dateFormat: "Y-m-d", // what you POST to PHP
-        allowInput: true
-      });
+    // Start Date picker — shows dd/mm/yyyy, submits YYYY-MM-DD
+    flatpickr("#start_date", {
+      altInput: true,
+      altFormat: "d/m/Y", // visible to user
+      dateFormat: "Y-m-d", // value posted to PHP (keeps backend unchanged)
+      allowInput: true
+    });
 
-      flatpickr(".date-input", {
-        altInput: true,
-        altInputClass: 'form-control',
-        altFormat: "d/m/Y",
-        dateFormat: "Y-m-d",
-        allowInput: true,
-        onChange(selectedDates, dateStr, instance) {
-          const dayTargetId = instance.input.dataset.dayTarget;
-          if (dayTargetId && selectedDates?.[0]) {
-            const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-            document.getElementById(dayTargetId).value = days[selectedDates[0].getDay()];
-          }
-        },
-        onReady(selectedDates, dateStr, instance) {
-          const dayTargetId = instance.input.dataset.dayTarget;
-          if (dayTargetId && instance.selectedDates?.[0]) {
-            const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-            document.getElementById(dayTargetId).value = days[instance.selectedDates[0].getDay()];
-          }
+    // Table row date pickers
+    flatpickr(".date-input", {
+      altInput: true,
+      altFormat: "d/m/Y", // visible to user
+      dateFormat: "Y-m-d", // value posted to PHP (keeps backend unchanged)
+      allowInput: true,
+      onChange: function(selectedDates, dateStr, instance) {
+        // Auto-fill Day column when date changes
+        const dayTargetId = instance.input.dataset.dayTarget;
+        if (dayTargetId && selectedDates && selectedDates[0]) {
+          const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+          document.getElementById(dayTargetId).value = days[selectedDates[0].getDay()];
         }
-      });
+      },
+      onReady: function(selectedDates, dateStr, instance) {
+        // Also set Day on initial render if a date already exists
+        const dayTargetId = instance.input.dataset.dayTarget;
+        if (dayTargetId && instance.selectedDates && instance.selectedDates[0]) {
+          const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+          document.getElementById(dayTargetId).value = days[instance.selectedDates[0].getDay()];
+        }
+      }
     });
   </script>
 

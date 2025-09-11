@@ -47,6 +47,7 @@ $meta = $plan['meta'] ?? [];
 $courseTitle  = $row['course_title']  ?: ($meta['course_title']  ?? '');
 $courseCode   = $row['course_code']   ?: ($meta['course_code']   ?? '');
 $moduleCode   = $row['module_code']   ?: ($meta['module_code']   ?? '');
+$moduleTitle  = $row['module_title']  ?: ($meta['module_title']  ?? '');
 $cohort       = $row['cohort_code']   ?: ($meta['cohort_code']   ?? '');
 $learningMode = $row['learning_mode'] ?: ($meta['learning_mode'] ?? '');
 $startDate    = $meta['start_date']   ?? '';
@@ -180,7 +181,7 @@ $updatedAt    = $row['last_updated'];
         <table class="meta-table">
             <tr>
                 <th>Module Name:</th>
-                <td><?= h($moduleCode) ?></td>
+                <td><?= h('[' . $moduleCode . '] ' . $moduleTitle) ?></td>
             </tr>
             <tr>
                 <th>Course Name:</th>

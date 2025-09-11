@@ -4,3 +4,4 @@ dev-test
 /vendor
 /vendor/**
 /vendor/**/*
+/npm
