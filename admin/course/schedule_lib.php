@@ -121,30 +121,6 @@ function upsert_courses_from_api(mysqli $conn): array
     return ['ok' => true, 'msg' => "Courses saved/updated: $count", 'count' => $count];
 }
 
-/* ===== Holidays + schedule (MULTI-COUNTRY) ===== */
-function fetch_public_holidays_one($countryCode, $year): array
-{
-    $url = "https://date.nager.at/api/v3/PublicHolidays/$year/$countryCode";
-    $ch  = curl_init($url);
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_CONNECTTIMEOUT => 8,
-        CURLOPT_TIMEOUT        => 12,
-        CURLOPT_FOLLOWLOCATION => true,
-        CURLOPT_HTTPHEADER     => ['Accept: application/json'],
-    ]);
-    $res  = curl_exec($ch);
-    $err  = curl_error($ch);
-    $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
-    if ($err || $http < 200 || $http >= 300) return [];
-    $data = json_decode($res, true);
-    if (!is_array($data)) return [];
-    $set = [];
-    foreach ($data as $h) if (!empty($h['date'])) $set[$h['date']] = true;
-    return $set;
-}
-
 /**
  * @param array $rows          CSV first 4 columns (for count)
  * @param string $startDate    'Y-m-d'
@@ -192,4 +168,65 @@ function generate_schedule(array $grid, string $startDateYmd, array $days, array
     }
 
     return $dates;
+}
+
+/**
+ * Convert ['Mon','Wed','Fri'] to weekday indices [1,3,5]
+ */
+function want_day_indices(array $days): array
+{
+    $dayIdx = array_flip(['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']); // Sun=0..Sat=6
+    return array_values(array_filter(
+        array_map(fn($d) => $dayIdx[$d] ?? -1, $days),
+        fn($i) => $i >= 0
+    ));
+}
+
+/**
+ * Find the next valid date (weekday in $wantDays and not in $holSet).
+ * If $inclusive is false, starts checking from (cursor + 1 day).
+ */
+function next_valid_date(DateTime $cursor, array $wantDays, array $holSet, bool $inclusive = false): DateTime
+{
+    $d = clone $cursor;
+    if (!$inclusive) $d->modify('+1 day');
+
+    while (true) {
+        $dow = (int)$d->format('w'); // 0..6
+        if (in_array($dow, $wantDays, true)) {
+            $ymd = $d->format('Y-m-d');
+            if (!isset($holSet[$ymd])) {
+                return clone $d;
+            }
+        }
+        $d->modify('+1 day');
+    }
+}
+
+/**
+ * Recompute dates for rows AFTER $startIndex, starting from $newDateYmd.
+ * Returns ['index' => 'Y-m-d', ...] for indices ($startIndex+1 ... end)
+ */
+function reflow_following(array $grid, int $startIndex, string $newDateYmd, array $days, array $countries): array
+{
+    global $conn;
+
+    $count = count($grid);
+    if ($startIndex < -1) $startIndex = -1;
+    if ($startIndex >= $count) return [];
+
+    $wantDays = want_day_indices($days);
+    $from     = new DateTime($newDateYmd);
+    $to       = (clone $from)->modify('+400 days');
+    $holSet   = holiday_set_between($conn, $countries, $from->format('Y-m-d'), $to->format('Y-m-d'));
+
+    $updates = [];
+    $cursor  = new DateTime($newDateYmd); // base = edited row's new date
+
+    for ($j = $startIndex + 1; $j < $count; $j++) {
+        $cursor = next_valid_date($cursor, $wantDays, $holSet, false); // strictly after previous
+        $updates[$j] = $cursor->format('Y-m-d');
+    }
+
+    return $updates;
 }

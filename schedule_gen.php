@@ -24,7 +24,7 @@ $userId   = $_SESSION['user_id'];
 
 // flash
 $flash = $_SESSION['flash'] ?? null;
-if ($flash && isset($flash['expires_at']) && $flash['expires_at'] < time()) {
+if ($flash && isset($flash['expires_at']) && $flash['expires_at'] <= time()) {
   // expired -> remove
   unset($_SESSION['flash']);
   $flash = null;
@@ -116,10 +116,8 @@ if ($grid && isPost('generateSchedule')) {
   $startDate   = trim($_POST['start_date'] ?? '');
   $daysRaw     = (array)($_POST['days'] ?? []);
   $countriesRaw = (array)($_POST['countries'] ?? []); // MULTI
-  $slot        = trim($_POST['time_slot'] ?? '');
   $customStart = trim($_POST['custom_start'] ?? '');
   $customEnd   = trim($_POST['custom_end'] ?? '');
-  $soc         = trim($_POST['soc'] ?? '');          // optional field you mentioned
   $cohortCode  = trim($_POST['cohort_code'] ?? '');
 
   // normalize days to 3-letter names (Mon..Sun), unique, keep order
@@ -175,13 +173,11 @@ if ($grid && isPost('generateSchedule')) {
 
       // persist for PDF/Save
       $_SESSION['generated']                 = $generated;
-      $_SESSION['soc']                       = $soc;
       $_SESSION['selected']['cohort_code']   = $cohortCode;
       $_SESSION['meta'] = [
         'start_date'   => $startDate,
         'days'         => $days,
         'countries'    => $countries,
-        'time_slot'    => $slot,
         'custom_start' => $customStart,
         'custom_end'   => $customEnd,
       ];
@@ -262,12 +258,20 @@ if (isPost('clearCsv')) {
 </head>
 
 <body class="py-4">
-  <div class="container">
-    <?php if ($flash): ?>
+  <div class="container m-0 px-0 w-100" style="max-width:1436px;">
+    <!-- <?php if ($flash): ?>
       <div class="alert alert-<?= h($flash['type'] ?? 'info') ?> mt-2"><?= h($flash['message'] ?? '') ?></div>
 
-    <?php endif; ?>
+    <?php endif; ?> -->
 
+    <?php if ($flash): ?>
+      <div class="d-flex flex-inline justify-content-between alert alert-<?= htmlspecialchars($flash['type']) ?> js-flash"
+        role="alert"
+        data-expire="<?= (int)$flash['expires_at'] * 1000 ?>">
+        <div><?= htmlspecialchars($flash['message']) ?></div>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+      </div>
+    <?php endif; ?>
     <!-- // echo all session Contents like selected -->
     <!-- <?php print_r($_SESSION['selected'] ?? []); ?> -->
 
@@ -275,8 +279,8 @@ if (isPost('clearCsv')) {
 
     <!-- 1) Pick Course / Module / Mode (loads template rows) -->
     <form method="post" class="mb-4">
-      <div class="row g-3">
-        <div class="col-12 position-relative">
+      <div class="row g-1">
+        <div class="col-5 position-relative">
           <label class="form-label">Search Courses</label>
           <div class="input-group">
             <input type="text" id="search" class="form-control" placeholder="<?= $selected['course_title'] ? h($selected['course_title']) : 'Search ...' ?>">
@@ -296,9 +300,33 @@ if (isPost('clearCsv')) {
         <input type="hidden" name="course_title" id="course_title" value="">
         <input type="hidden" name="module_title" value="<?= h($selected['module_title'] ?? '') ?>">
 
+        <div class="col-md-4">
+          <label class="form-label">Learning Modules</label>
+          <select id="moduleSelect" name="module_code" class="form-select" required>
+            <?php if ($selected['module_code']): ?>
+              <option value="<?= h($selected['module_code']) ?>" selected><?= h($selected['module_code']) ?></option>
+            <?php else: ?>
+              <option value="">Select a module...</option>
+            <?php endif; ?>
+          </select>
+        </div>
+
+        <div class="col-md-2">
+          <label class="form-label">Learning Modes</label>
+          <select id="modeSelect" class="form-select" required>
+            <?php if ($selected['learning_mode']): ?>
+              <option selected><?= h($selected['learning_mode']) ?></option>
+            <?php else: ?>
+              <option value="">Select a mode...</option>
+            <?php endif; ?>
+          </select>
+          <input type="hidden" name="learning_mode" id="learning_mode" value="<?= h($selected['learning_mode']) ?>">
+          <div id="modeDetails" class="small mt-2"></div>
+        </div>
 
 
-        <div class="col-md-6">
+
+        <!-- <div class="col-md-6">
           <label class="form-label">Learning Modules</label>
           <select id="moduleSelect" name="module_code" class="form-select" required>
             <?php if ($selected['module_code']): ?>
@@ -320,9 +348,9 @@ if (isPost('clearCsv')) {
           </select>
           <input type="hidden" name="learning_mode" id="learning_mode" value="<?= h($selected['learning_mode']) ?>">
           <div id="modeDetails" class="small mt-2"></div>
-        </div>
+        </div> -->
 
-        <div class="col-12">
+        <div class="col-1">
           <button class="btn btn-primary" name="loadTemplate" type="submit">Load Template</button>
           <!-- <a class="btn btn-outline-secondary" href="/admin/course/master_temp.php">Create/Edit Templates</a> -->
         </div>
@@ -437,17 +465,6 @@ if (isPost('clearCsv')) {
               We’ll skip any holiday that appears in <em>any</em> selected country.
             </div>
           </div>
-
-          <!-- <div class="col-md-3">
-            <label class="form-label">Time Slot</label>
-            <select class="form-select" name="time_slot">
-              <option value="09:00 - 10:00">09:00 - 10:00</option>
-              <option value="10:00 - 12:00">10:00 - 12:00</option>
-              <option value="14:00 - 16:00">14:00 - 16:00</option>
-              <option value="19:00 - 22:00" selected>19:00 - 22:00</option>
-            </select>
-            <div class="small-note">Used for <em>MS-Sync</em> rows; async rows show a self-paced note.</div>
-          </div> -->
 
           <div class="col-md-4">
             <label class="form-label">Start Time & End Time (Sync rows)</label>
@@ -695,7 +712,6 @@ if (isPost('clearCsv')) {
       </div>`;
     });
 
-    // Disable slot if custom times filled
     document.addEventListener('DOMContentLoaded', () => {
       const s = document.querySelector('input[name="custom_start"]');
       const e = document.querySelector('input[name="custom_end"]');
@@ -850,13 +866,27 @@ if (isPost('clearCsv')) {
         dateFormat: "Y-m-d",
         allowInput: true,
         onChange(selectedDates, dateStr, instance) {
+          // (you already update the Day cell here)
           const dayTargetId = instance.input.dataset.dayTarget;
           if (dayTargetId && selectedDates?.[0]) {
             const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
             document.getElementById(dayTargetId).value = days[selectedDates[0].getDay()];
           }
+          // NEW: reflow from this row downward
+          const idx = parseInt(instance.input.dataset.index, 10);
+          if (!Number.isNaN(idx) && selectedDates?.[0]) {
+            reflowFollowingRows(idx, selectedDates[0]);
+          }
+        },
+        onValueUpdate(selectedDates, dateStr, instance) {
+          // This fires when the user types in the alt input; also reflow.
+          const idx = parseInt(instance.input.dataset.index, 10);
+          if (!Number.isNaN(idx) && selectedDates?.[0]) {
+            reflowFollowingRows(idx, selectedDates[0]);
+          }
         },
         onReady(selectedDates, dateStr, instance) {
+          // pre-fill Day cell on load (you already do this)
           const dayTargetId = instance.input.dataset.dayTarget;
           if (dayTargetId && instance.selectedDates?.[0]) {
             const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -864,7 +894,72 @@ if (isPost('clearCsv')) {
           }
         }
       });
+
     });
+
+    // Use flatpickr’s built-in formatting/parsing to avoid Safari issues
+    function toYMD(dateObj) {
+      return window.flatpickr.formatDate(dateObj, "Y-m-d");
+    }
+
+    let suppressReflow = 0; // keep this guard globally (add if you don't have it)
+
+    function reflowFollowingRows(rowIndex, newDateObj) {
+      const ymd = window.flatpickr.formatDate(newDateObj, "Y-m-d");
+
+      // ✅ Get the chosen day pattern from the HIDDEN carries inside the Save form
+      let dayVals = Array.from(
+        document.querySelectorAll('#saveForm input[name="days[]"]')
+      ).map(el => el.value);
+
+      // Fallback (only if hidden carries aren't present): use checked checkboxes
+      if (!dayVals.length) {
+        dayVals = Array.from(
+          document.querySelectorAll('input[name="days[]"]:checked')
+        ).map(el => el.value);
+      }
+      const uniqDays = [...new Set(dayVals)];
+
+      // ✅ Countries: ONLY the hidden selected ones inside the Save form
+      const uniqCountries = [...new Set(
+        Array.from(document.querySelectorAll('#saveForm input[name="countries[]"]'))
+        .map(el => el.value)
+      )];
+
+      const fd = new FormData();
+      fd.append('index', rowIndex);
+      fd.append('new_date', ymd);
+      uniqDays.forEach(d => fd.append('days[]', d));
+      uniqCountries.forEach(c => fd.append('countries[]', c));
+
+      suppressReflow++;
+      fetch('/schedule_gen/admin/course/reflow_schedule.php', {
+          method: 'POST',
+          body: fd
+        })
+        .then(r => r.json())
+        .then(json => {
+          if (!json.ok) {
+            console.error('Reflow failed:', json.msg);
+            return;
+          }
+
+          // Apply updates WITHOUT triggering onChange
+          json.updates.forEach(u => {
+            const inp = document.getElementById('row-date-' + u.index);
+            const fp = inp?._flatpickr;
+            if (fp) fp.setDate(u.date, /*triggerChange*/ false, "Y-m-d");
+            else if (inp) inp.value = u.date;
+
+            const dayEl = document.getElementById('day-' + u.index);
+            if (dayEl) dayEl.value = u.day;
+          });
+        })
+        .catch(err => console.error(err))
+        .finally(() => {
+          suppressReflow--;
+        });
+    }
   </script>
 
 </body>
