@@ -8,6 +8,28 @@ session_start();
 require __DIR__ . '/db.php';
 
 // ---- NEW: allow export by id directly from DB ----
+
+
+$rows    = $_POST['rows'] ?? ($_SESSION['generated'] ?? []);
+$cohort  = trim($_POST['cohort_code'] ?? ($_SESSION['selected']['cohort_code'] ?? ''));
+$userId  = (int)($_SESSION['auth']['user_id'] ?? 0);
+
+$courseId     = $_POST['course_id']     ?? ($_SESSION['selected']['course_id']     ?? '');
+$courseCode   = $_POST['course_code']   ?? ($_SESSION['selected']['course_code']   ?? '');
+$moduleCode   = $_POST['module_code']   ?? ($_SESSION['selected']['module_code']   ?? '');
+$learningMode = $_POST['learning_mode'] ?? ($_SESSION['selected']['learning_mode'] ?? '');
+$courseTitle  = $_SESSION['selected']['course_title']  ?? '';
+$moduleTitle  = $_POST['module_title']  ?? ($_SESSION['selected']['module_title']  ?? '');
+
+
+$startDate    = $_POST['start_date']    ?? ($_SESSION['meta']['start_date']   ?? '');
+$days         = $_POST['days']          ?? ($_SESSION['meta']['days']         ?? []);
+$countries    = $_POST['countries']     ?? ($_SESSION['meta']['countries']    ?? []);
+$timeSlot     = $_POST['time_slot']     ?? ($_SESSION['meta']['time_slot']    ?? '');
+$customStart  = $_POST['custom_start']  ?? ($_SESSION['meta']['custom_start'] ?? '');
+$customEnd    = $_POST['custom_end']    ?? ($_SESSION['meta']['custom_end']   ?? '');
+
+
 if (isset($_GET['id'])) {
     $exportId = (int)$_GET['id'];
 
@@ -44,26 +66,6 @@ if (isset($_GET['id'])) {
         exit('Schedule not found.');
     }
 }
-
-
-$rows    = $_POST['rows'] ?? ($_SESSION['generated'] ?? []);
-$cohort  = trim($_POST['cohort_code'] ?? ($_SESSION['selected']['cohort_code'] ?? ''));
-$userId  = (int)($_SESSION['user_id'] ?? 0);
-
-$courseId     = $_POST['course_id']     ?? ($_SESSION['selected']['course_id']     ?? '');
-$courseCode   = $_POST['course_code']   ?? ($_SESSION['selected']['course_code']   ?? '');
-$moduleCode   = $_POST['module_code']   ?? ($_SESSION['selected']['module_code']   ?? '');
-$learningMode = $_POST['learning_mode'] ?? ($_SESSION['selected']['learning_mode'] ?? '');
-$courseTitle  = $_POST['course_title']  ?? ($_SESSION['selected']['course_title']  ?? '');
-$moduleTitle  = $_POST['module_title']  ?? ($_SESSION['selected']['module_title']  ?? '');
-
-
-$startDate    = $_POST['start_date']    ?? ($_SESSION['meta']['start_date']   ?? '');
-$days         = $_POST['days']          ?? ($_SESSION['meta']['days']         ?? []);
-$countries    = $_POST['countries']     ?? ($_SESSION['meta']['countries']    ?? []);
-$timeSlot     = $_POST['time_slot']     ?? ($_SESSION['meta']['time_slot']    ?? '');
-$customStart  = $_POST['custom_start']  ?? ($_SESSION['meta']['custom_start'] ?? '');
-$customEnd    = $_POST['custom_end']    ?? ($_SESSION['meta']['custom_end']   ?? '');
 
 // Format any reasonable date string to dd/mm/yyyy for the PDF
 function fmt_dmy($s)

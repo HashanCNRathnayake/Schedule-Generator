@@ -1,6 +1,6 @@
 <?php
 // index.php
-session_start();
+// session_start();
 date_default_timezone_set('Asia/Singapore');
 
 require_once __DIR__ . '/vendor/autoload.php';
@@ -8,11 +8,24 @@ if (class_exists(\Dotenv\Dotenv::class)) {
   $dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
   $dotenv->safeLoad();
 }
+
+require __DIR__ . '/auth/guard.php';
+$me = $_SESSION['auth'] ?? null;
+$userName = $me['name'] ?? 'Guest';
+
 $baseUrl = $_ENV['BASE_URL'] ?? '/';
+
 
 require __DIR__ . '/db.php';
 require __DIR__ . '/components/header.php';
 require __DIR__ . '/components/navbar.php';
+
+
+
+$flash = $_SESSION['flash'] ?? null;
+unset($_SESSION['flash']);
+
+
 
 
 // OPTIONAL auth guard
@@ -182,9 +195,15 @@ function count_schedule_rows($json)
 </head>
 
 <body class="bg-light">
-  <div class="container-fluid py-3">
+  <?php if ($flash): ?>
+    <div class="d-flex flex-inline justify-content-between alert alert-<?= h($flash['type'] ?? 'info') ?> mt-2"><?= h($flash['message'] ?? '') ?>
+      <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+  <?php endif; ?>
+  <div class="container-fluid py-3 pt-0">
 
     <div class="row mb-3">
+      <h5>Hi <?= h($userName) ?>,</h5>
       <!-- <h3 class="mb-0 purple">Schedules</h3> -->
 
       <form class="row">
@@ -223,15 +242,23 @@ function count_schedule_rows($json)
           <thead>
             <tr class="table-light">
               <th>ID</th>
-              <th>User</th>
+              <?php if (hasRole($conn, 'Admin')): ?>
+
+                <th>User</th>
+              <?php endif; ?>
+
               <th>Cohort Code</th>
               <th>Course Code</th>
               <th>Module Code</th>
               <th>Learning Mode</th>
               <th>Course Title</th>
-              <th>Rows</th>
-              <th>Created</th>
-              <th>Updated</th>
+              <?php if (hasRole($conn, 'Admin')): ?>
+
+                <th>Rows</th>
+                <th>Created</th>
+                <th>Updated</th>
+              <?php endif; ?>
+
               <th style="min-width:120px">Actions</th>
             </tr>
           </thead>
@@ -244,17 +271,30 @@ function count_schedule_rows($json)
                 $rowCount = count_schedule_rows($r['plan_json']); ?>
                 <tr>
                   <td><?= (int)$r['id'] ?></td>
-                  <td><?= (int)$r['user_id'] ?></td>
+                  <?php if (hasRole($conn, 'Admin')): ?>
+
+                    <td><?= (int)$r['user_id'] ?></td>
+                  <?php endif; ?>
+
                   <td><?= h($r['cohort_code']) ?></td>
                   <td><?= h($r['course_code']) ?></td>
                   <td><?= h($r['module_code']) ?></td>
                   <td><?= h($r['learning_mode']) ?></td>
                   <td class="text-truncate" style="max-width:340px"><?= h($r['course_title']) ?></td>
-                  <td><?= (int)$rowCount ?></td>
-                  <td><?= h($r['created_at']) ?></td>
-                  <td><?= h($r['last_updated']) ?></td>
+                  <?php if (hasRole($conn, 'Admin')): ?>
+
+                    <td><?= (int)$rowCount ?></td>
+                    <td><?= h($r['created_at']) ?></td>
+                    <td><?= h($r['last_updated']) ?></td>
+                  <?php endif; ?>
+
                   <td>
                     <a class="btn btn-sm btn-outline-primary" href="schedule_view.php?id=<?= $r['id'] ?>">View</a>
+                    <?php if (hasRole($conn, 'Admin')): ?>
+
+                      <a class="btn btn-sm btn-warning" href="schedule_edit.php?id=<?= $r['id'] ?>">Edit</a>
+                    <?php endif; ?>
+
                   </td>
                 </tr>
             <?php endforeach;

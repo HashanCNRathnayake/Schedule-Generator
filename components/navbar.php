@@ -20,15 +20,12 @@
     }
 </style>
 
-
-
 <nav class="navbar navbar-expand-lg mb-2">
     <div class="container-fluid px-0">
 
         <a class="navbar-brand"
             href="<?= htmlspecialchars($baseUrl) ?>index.php">
             Schedule Generator
-
         </a>
 
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNavDropdown">
@@ -36,58 +33,50 @@
         </button>
 
         <div class="collapse navbar-collapse" id="navbarNavDropdown">
-            <ul class="navbar-nav ms-auto me-5 mb-2 mb-lg-0">
+            <ul class="navbar-nav ms-auto mb-2 mb-lg-0 align-items-center">
+                <?php if ($me): ?>
+                    <?php if (
+                        hasRole($conn, 'User') ||
+                        hasRole($conn, 'Admin') ||
+                        hasRole($conn, 'SuperAdmin')
+                    ): ?>
 
-                <!-- <li class="nav-item">
-                        <a class="nav-link" href="<?= htmlspecialchars($baseUrl) ?>admin/course/course.php">See Course</a>
-                    </li> -->
-
-
-                <li class="nav-item">
-                    <a class="nav-link" href="<?= htmlspecialchars($baseUrl) ?>admin/course/master_temp.php">Templates</a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="<?= htmlspecialchars($baseUrl) ?>schedule_gen.php">Schedules</a>
-                </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="<?= htmlspecialchars($baseUrl) ?>admin/course/master_temp.php">Templates</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="<?= htmlspecialchars($baseUrl) ?>schedule_gen.php">Schedules</a>
+                        </li>
+                    <?php endif; ?>
+                <?php endif; ?>
                 <li class="nav-item">
                     <a class="nav-link" href="<?= htmlspecialchars($baseUrl) ?>index.php">Schedules List</a>
                 </li>
                 <!-- <li class="nav-item">
-                    <a class="nav-link" href="<?= htmlspecialchars($baseUrl) ?>admin/course/upload_and_show.php">C2 gen</a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="<?= htmlspecialchars($baseUrl) ?>admin/course/session_plan.php">Session Plan</a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="<?= htmlspecialchars($baseUrl) ?>admin/session_templates/master.php">Session Master</a>
-                </li>
-                <li class="nav-item">
                     <a class="nav-link" href="<?= htmlspecialchars($baseUrl) ?>admin/session_plans/generate.php">Session gen</a>
                 </li> -->
 
-
-
-                <?php if (isset($_SESSION['role'])) : ?>
-                    <?php if ($_SESSION['role'] === 'admin'): ?>
+                <?php if ($me): ?>
+                    <?php if (hasRole($conn, 'Admin')): ?>
                         <li class="nav-item">
                             <a class="nav-link" href="<?= htmlspecialchars($baseUrl) ?>admin/users.php">Manage Users</a>
                         </li>
 
-
                     <?php endif; ?>
+
+                    <li class="nav-item ms-5">
+                        <a href="<?= htmlspecialchars($baseUrl) ?>sso/logout.php" class="btn btn-danger btn-sm">Logout</a>
+                    </li>
+
+
+                <?php else: ?>
+                    <li class="nav-item  ms-5">
+                        <a href="<?= htmlspecialchars($baseUrl) ?>login.php" class="btn btn-primary btn-sm">Login</a>
+                    </li>
+
                 <?php endif; ?>
 
             </ul>
-            <?php if (isset($_SESSION['user_id'])): ?>
-                <div class="d-flex">
-                    <a href="<?= htmlspecialchars($baseUrl) ?>functions/logout.php" class="btn btn-danger btn-sm">Logout</a>
-                </div>
-
-            <?php else: ?>
-                <div class="d-flex">
-                    <a href="<?= htmlspecialchars($baseUrl) ?>login.php" class="btn btn-primary btn-sm">Login</a>
-                </div>
-            <?php endif; ?>
         </div>
     </div>
 </nav>

@@ -1,6 +1,5 @@
 <?php
-
-session_start();
+// session_start();
 date_default_timezone_set('Asia/Singapore'); // adjust if needed
 
 // autoload & env
@@ -13,15 +12,18 @@ $baseUrl = $_ENV['BASE_URL'] ?? '/';
 
 // DB
 require __DIR__ . '/../../db.php';
+require __DIR__ . '/../../auth/guard.php';
+$me = $_SESSION['auth'] ?? null;
+requireRole($conn, 'Admin'); // must be logged in + have Admin
 
 // auth guard (adjust to your app)
-if (!isset($_SESSION['user_id'])) {
-    header("Location: ./../../login.php");
-    exit;
-}
+// if (!isset($_SESSION['user_id'])) {
+//     header("Location: ./../../login.php");
+//     exit;
+// }
 
-$username = $_SESSION['username'] ?? '';
-$userId   = (int)($_SESSION['user_id'] ?? 0);
+$username = $_SESSION['auth']['name'] ?? '';
+$userId   = (int)($_SESSION['auth']['user_id'] ?? 0);
 
 $flash = $_SESSION['flash'] ?? null;
 unset($_SESSION['flash']);
@@ -86,38 +88,57 @@ if (isPost('saveTemplate')) {
         $stmt->close();
 
         // Insert rows
+        // $stmt2 = $conn->prepare("
+        //     INSERT INTO session_template_rows
+        //         (template_id, session_no, session_type, session_details, duration_hr)
+        //     VALUES (?,?,?,?,?)
+        //     ON DUPLICATE KEY UPDATE
+        //         session_type = VALUES(session_type),
+        //         session_details = VALUES(session_details),
+        //         duration_hr = VALUES(duration_hr)
+        // ");
+        // foreach ($rows as $r) {
+        //     [$no, $type, $details, $dur] = $r;
+        //     $type = normalize_session_type($type);
+        //     $stmt2->bind_param("issss", $templateId, $no, $type, $details, $dur);
+        //     $stmt2->execute();
+        // }
         $stmt2 = $conn->prepare("
             INSERT INTO session_template_rows
-                (template_id, session_no, session_type, session_details, duration_hr)
-            VALUES (?,?,?,?,?)
+                (template_id, session_no, session_type, session_details, class_type, duration_hr)
+            VALUES (?,?,?,?,?,?)
             ON DUPLICATE KEY UPDATE
-                session_type = VALUES(session_type),
+                session_type    = VALUES(session_type),
                 session_details = VALUES(session_details),
-                duration_hr = VALUES(duration_hr)
+                class_type      = VALUES(class_type),
+                duration_hr     = VALUES(duration_hr)
         ");
+
         foreach ($rows as $r) {
-            [$no, $type, $details, $dur] = $r;
+            [$no, $type, $details, $dur, $classType] = array_pad($r, 5, '');
             $type = normalize_session_type($type);
-            $stmt2->bind_param("issss", $templateId, $no, $type, $details, $dur);
+            $stmt2->bind_param("isssss", $templateId, $no, $type, $details, $classType, $dur);
             $stmt2->execute();
         }
+
+
         $stmt2->close();
 
         $conn->commit();
         $_SESSION['flash'] = ['type' => 'success', 'message' => "Template saved (#$templateId) with " . count($rows) . " rows."];
 
         // Optional: pass selection to Generate page via GET
-        $to = "../session_plans/generate.php?course_id=" . urlencode($course_id)
-            . "&course_code=" . urlencode($course_code)
-            . "&module_code=" . urlencode($module_code)
-            . "&learning_mode=" . urlencode($learning_mode);
-        $_SESSION['selected'] = [
-            'course_id' => $course_id,
-            'course_code' => $course_code,
-            'module_code' => $module_code,
-            'learning_mode' => $learning_mode
-        ];
-        header('Location: ' . $_SERVER['PHP_SELF'] . '/../course/schedule.php');
+        // $to = "/../../index.php?course_id=" . urlencode($course_id)
+        //     . "&course_code=" . urlencode($course_code)
+        //     . "&module_code=" . urlencode($module_code)
+        //     . "&learning_mode=" . urlencode($learning_mode);
+        // $_SESSION['selected'] = [
+        //     'course_id' => $course_id,
+        //     'course_code' => $course_code,
+        //     'module_code' => $module_code,
+        //     'learning_mode' => $learning_mode
+        // ];
+        header('Location: ' . $_SERVER['PHP_SELF'] . '/../../../schedule_gen.php');
         exit;
     } catch (Throwable $e) {
         $conn->rollback();
@@ -162,7 +183,9 @@ if (isPost('saveTemplate')) {
 <body class="py-4">
     <div class="container">
         <?php if ($flash): ?>
-            <div class="alert alert-<?= h($flash['type'] ?? 'info') ?> mt-2"><?= h($flash['message'] ?? '') ?></div>
+            <div class="d-flex flex-inline justify-content-between alert alert-<?= h($flash['type'] ?? 'info') ?> mt-2"><?= h($flash['message'] ?? '') ?>
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
         <?php endif; ?>
 
         <div class="d-flex justify-content-between align-items-center mb-3">
@@ -208,7 +231,9 @@ if (isPost('saveTemplate')) {
             <div class="col-md-8">
                 <label class="form-label">Upload CSV (first 4 columns)</label>
                 <input class="form-control" type="file" name="csvFile" accept=".csv" required>
-                <div class="form-text">Expected columns: Session No, Session Type, Session Details, Duration Hr</div>
+                <div class="form-text">
+                    Expected columns: Session No, Session Type, Session Details, Duration Hr, Class Type
+                </div>
             </div>
 
             <div class="col-md-4 d-flex align-items-end">
@@ -217,7 +242,7 @@ if (isPost('saveTemplate')) {
         </form>
     </div>
 
-    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 
     <script>
         const searchInput = document.getElementById('search');

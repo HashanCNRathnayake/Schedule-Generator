@@ -14,57 +14,221 @@ function h($s)
 }
 
 /* ===== CSV helpers ===== */
+// function csv_to_rows($tmpPath): array
+// {
+//     $rows = [];
+//     if (($fh = fopen($tmpPath, 'r')) === false) return $rows;
+
+//     $headerFound = false;
+//     while (($cols = fgetcsv($fh)) !== false) {
+//         $cols = array_map('trim', $cols);
+
+//         if (!$headerFound) {
+//             if (isset($cols[0], $cols[1], $cols[2], $cols[3])) {
+//                 $c0 = strtolower($cols[0]);
+//                 $c1 = strtolower($cols[1]);
+//                 $c2 = strtolower($cols[2]);
+//                 $c3 = strtolower($cols[3]);
+//                 if (
+//                     str_contains($c0, 'session') &&
+//                     str_contains($c1, 'type') &&
+//                     str_contains($c2, 'details') &&
+//                     (str_contains($c3, 'duration') || str_contains($c3, 'hrs'))
+//                 ) {
+//                     $headerFound = true;
+//                 }
+//             }
+//             continue;
+//         }
+
+//         $c0 = $cols[0] ?? '';
+//         $c1 = $cols[1] ?? '';
+//         $c2 = $cols[2] ?? '';
+//         $c3 = $cols[3] ?? '';
+//         if ($c0 === '' && $c1 === '' && $c2 === '' && $c3 === '') continue;
+//         $rows[] = [$c0, $c1, $c2, $c3];
+//     }
+//     fclose($fh);
+//     return $rows;
+// }
+
 function csv_to_rows($tmpPath): array
 {
     $rows = [];
     if (($fh = fopen($tmpPath, 'r')) === false) return $rows;
 
     $headerFound = false;
-    while (($cols = fgetcsv($fh)) !== false) {
+    $classIdx = -1; // will hold the index of "Class Type" once we see the header
+
+    while (($cols = fgetcsv($fh, 0, ',', '"', "\\")) !== false) {
         $cols = array_map('trim', $cols);
 
+        // Find the header row and map the "Class Type" column by name
         if (!$headerFound) {
             if (isset($cols[0], $cols[1], $cols[2], $cols[3])) {
                 $c0 = strtolower($cols[0]);
                 $c1 = strtolower($cols[1]);
                 $c2 = strtolower($cols[2]);
                 $c3 = strtolower($cols[3]);
+
                 if (
                     str_contains($c0, 'session') &&
                     str_contains($c1, 'type') &&
                     str_contains($c2, 'details') &&
                     (str_contains($c3, 'duration') || str_contains($c3, 'hrs'))
                 ) {
+                    // locate "Class Type" header anywhere in this row (e.g., column N)
+                    foreach ($cols as $i => $h) {
+                        $h = strtolower($h);
+                        if (str_contains($h, 'class') && str_contains($h, 'type')) {
+                            $classIdx = $i;
+                            break;
+                        }
+                    }
                     $headerFound = true;
+                    continue; // skip the header row itself
                 }
             }
+            // still above the table → ignore this row
             continue;
         }
 
+        // After header: read row data
         $c0 = $cols[0] ?? '';
         $c1 = $cols[1] ?? '';
-        $c2 = $cols[2] ?? '';
+        // Clean details *robustly* and never return empty due to bullets
+        $rawDetails = $cols[2] ?? '';
+        $cleaned    = clean_session_details($rawDetails);
+        // If cleaning somehow empties the string while the raw had content, keep a minimal fallback
+        if ($cleaned === '' && $rawDetails !== '') {
+            $cleaned = trim(preg_replace('/\?+/', ' ', fix_encoding($rawDetails)));
+        }
+        $c2 = $cleaned;
         $c3 = $cols[3] ?? '';
-        if ($c0 === '' && $c1 === '' && $c2 === '' && $c3 === '') continue;
-        $rows[] = [$c0, $c1, $c2, $c3];
+        $c4 = ($classIdx >= 0 && isset($cols[$classIdx])) ? $cols[$classIdx] : ''; // Class Type (may be empty if not present)
+
+        // skip completely empty lines
+        if ($c0 === '' && $c1 === '' && $c2 === '' && $c3 === '' && $c4 === '') continue;
+
+        // Return five values (adds Class Type as the 5th)
+        $rows[] = [$c0, $c1, $c2, $c3, $c4];
     }
+
     fclose($fh);
     return $rows;
 }
 
+
 /* ===== Normalization helpers ===== */
 function normalize_session_type($s)
 {
-    $x = strtolower(trim($s));
-    if (in_array($x, ['ms-sync', 'ms sync', 'mssync'])) return 'MS-Sync';
-    if (in_array($x, ['ms-async', 'ms async', 'msasync', 'ms-asyn', 'ms-asyn c'])) return 'MS-ASync';
+    $x = trim(mb_strtolower((string)$s));
+    // normalize weird dashes/spaces
+    $x = str_replace(['–', '—', '  '], ['-', '-', ' '], $x);
+    $x = preg_replace('/\s+/', '', $x); // e.g., "MS Sync" -> "mssync"
+
+    // Async first (anything ending with -async)
+    if (str_contains($x, 'async')) {
+        if (str_starts_with($x, 'el')) return 'EL-Async';
+        if (str_starts_with($x, 'ms')) return 'MS-Async';
+        return 'Async';
+    }
+
+    if (str_contains($x, 'aync')) {
+        if (str_starts_with($x, 'el')) return 'EL-Async';
+        if (str_starts_with($x, 'ms')) return 'MS-Async';
+        return 'Async';
+    }
+
+    // Sync cases
+    if (str_contains($x, 'sync')) {
+        if (str_starts_with($x, 'fc')) return 'FC-Sync';
+        if (str_starts_with($x, 'ms')) return 'MS-Sync';
+        if (str_starts_with($x, 'sa')) return 'SA-Sync';
+        return 'Sync';
+    }
+
+    // fallback to original
     return $s;
 }
 function faculty_from_type($type)
 {
     $t = normalize_session_type($type);
-    return ($t === 'MS-Sync') ? 'Mentor' : (($t === 'MS-ASync') ? 'NA' : '');
+
+    // Your mapping:
+    // - any *Async*  => NA
+    // - FC-Sync      => Instructor
+    // - MS-Sync      => Mentor
+    // if (str_ends_with($t, 'Async') || stripos($t, 'Async') !== false) {
+    //     return 'NA';
+    // }
+    if (
+        str_ends_with($t, 'Async') || stripos($t, 'Async') !== false
+        || str_ends_with($t, 'Aync') || stripos($t, 'Aync') !== false
+    ) {
+        return 'NA';
+    }
+
+    if ($t === 'FC-Sync') return 'Instructor';
+    if ($t === 'MS-Sync') return 'Mentor';
+    if ($t === 'SA-Sync') return 'Assessor';
+    return ''; // unknown/other
 }
+
+function fix_encoding(string $s): string
+{
+    // Try to detect and convert to UTF-8 (common CSVs are cp1252/ISO-8859-1)
+    $enc = mb_detect_encoding($s, ['UTF-8', 'ISO-8859-1', 'ISO-8859-15', 'Windows-1252'], true);
+    if ($enc && $enc !== 'UTF-8') {
+        $s = mb_convert_encoding($s, 'UTF-8', $enc);
+    }
+    // Normalize NBSP to regular space
+    $s = str_replace("\xC2\xA0", ' ', $s);
+    return $s;
+}
+
+function clean_session_details(string $s): string
+{
+    // 0) Normalize encoding first
+    $orig = $s = fix_encoding($s);
+
+    // 1) Convert *actual* bullet characters to a neutral separator
+    //    (middle dot, bullet, dot operator, katakana middle dot, etc.)
+    $s = str_replace(
+        ["\xC2\xB7", '·', '•', '∙', '‧', '・', '●'],
+        ' - ',
+        $s
+    );
+
+    // 2) Many exports turned bullets into a literal " ? " token.
+    //    Replace only a *standalone* question mark between spaces with a separator.
+    //    Examples matched: " ? ", " ?  ", "  ? ", leading "? " and " ?," but NOT "Why?"
+    $s = preg_replace('/(?<=\s)\?(?=\s|,|;|:)/u', ' - ', $s);  // in between words
+    $s = preg_replace('/^(?:\?+\s+)/u', ' - ', $s);            // at start: "? Text" -> " - Text"
+
+    // 3) Collapse doubles
+    $s = preg_replace('/\s{2,}/u', ' ', $s);
+    $s = preg_replace('/(\s-\s){2,}/u', ' - ', $s);
+
+    // --- turn " - " separators into multiline bullets ---
+    // e.g. "- A - B - C"  ->  "- A\n- B\n- C"
+    $parts = array_filter(array_map('trim', preg_split('/\s-\s/u', $s)));
+    if (count($parts) > 1) {
+        $s = '- ' . implode("\n- ", $parts);
+    }
+
+    // 4) Trim spaces (but do not over-trim dashes away if that would empty the string)
+    $s = trim($s);
+
+    // 5) Safety net: if we somehow removed everything, fall back to a simple
+    //    replacement of "?" with a space on the original
+    if ($s === '') {
+        $s = trim(preg_replace('/\?+/', ' ', $orig));
+    }
+
+    return $s;
+}
+
 function weekday_name(DateTime $d)
 {
     return $d->format('D');

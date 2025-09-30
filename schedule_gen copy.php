@@ -1,12 +1,6 @@
 <?php
-session_start();
+// session_start();
 date_default_timezone_set('Asia/Singapore'); // adjust if needed
-
-// auth
-if (!isset($_SESSION['user_id'])) {
-  header("Location: ./login.php");
-  exit;
-}
 
 require_once __DIR__ . '/vendor/autoload.php';
 $dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
@@ -14,21 +8,19 @@ $dotenv->load();
 $baseUrl = $_ENV['BASE_URL'] ?? '/';
 
 require __DIR__ . '/db.php';
+require __DIR__ . '/auth/guard.php';
+$me = $_SESSION['auth'] ?? null;
+requireRole($conn, 'Admin'); // must be logged in + have Admin
+
 require __DIR__ . '/components/header.php';
 require __DIR__ . '/components/navbar.php';
 require __DIR__ . '/admin/course/schedule_lib.php';
 
-
-$username = $_SESSION['username'] ?? '';
-$userId   = $_SESSION['user_id'];
+$userId   = $_SESSION['auth']['user_id'] ?? 0;
 
 // flash
 $flash = $_SESSION['flash'] ?? null;
-if ($flash && isset($flash['expires_at']) && $flash['expires_at'] <= time()) {
-  // expired -> remove
-  unset($_SESSION['flash']);
-  $flash = null;
-}
+unset($_SESSION['flash']);
 
 
 // state
@@ -93,19 +85,17 @@ if (isPost('loadTemplate') || ($selected['course_id'] && $selected['module_code'
       $_SESSION['flash'] = [
         'type' => 'success',
         'message' => "Loaded template #$templateId (rows: " . count($grid) . ").",
-        'expires_at' => time() + 30
       ];
       $_SESSION['selected'] = $selected;
-      // header('Location: ' . $_SERVER['PHP_SELF']); // bare
+      // header('Location: ' . $baseUrl . '/schedule_gen.php'); // bare
       // exit;
     } else {
       $_SESSION['flash'] = [
         'type' => 'danger',
         'message' => 'No template found. Please create it on the Master page.',
-        'expires_at' => time() + 30
       ];
-      // header('Location: ' . $_SERVER['PHP_SELF']);
-      // exit;
+      header('Location: ' . $_SERVER['PHP_SELF']);
+      exit;
     }
   }
 }
@@ -180,6 +170,11 @@ if ($grid && isPost('generateSchedule')) {
         'countries'    => $countries,
         'custom_start' => $customStart,
         'custom_end'   => $customEnd,
+      ];
+
+      $_SESSION['flash'] = [
+        'type' => 'success',
+        'message' => "Generated Session Plan.",
       ];
     } catch (Throwable $e) {
       $error = 'Failed to generate schedule: ' . $e->getMessage();
@@ -258,20 +253,14 @@ if (isPost('clearCsv')) {
 </head>
 
 <body class="py-4">
-  <div class="container">
-    <!-- <?php if ($flash): ?>
-      <div class="alert alert-<?= h($flash['type'] ?? 'info') ?> mt-2"><?= h($flash['message'] ?? '') ?></div>
-
-    <?php endif; ?> -->
-
+  <div class="container m-0 px-0 w-100" style="max-width:1436px;">
     <?php if ($flash): ?>
-      <div class="d-flex flex-inline justify-content-between alert alert-<?= htmlspecialchars($flash['type']) ?> js-flash"
-        role="alert"
-        data-expire="<?= (int)$flash['expires_at'] * 1000 ?>">
-        <div><?= htmlspecialchars($flash['message']) ?></div>
+      <div class="d-flex flex-inline justify-content-between alert alert-<?= h($flash['type'] ?? 'info') ?> mt-2"><?= h($flash['message'] ?? '') ?>
         <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
       </div>
+
     <?php endif; ?>
+
     <!-- // echo all session Contents like selected -->
     <!-- <?php print_r($_SESSION['selected'] ?? []); ?> -->
 
@@ -279,8 +268,8 @@ if (isPost('clearCsv')) {
 
     <!-- 1) Pick Course / Module / Mode (loads template rows) -->
     <form method="post" class="mb-4">
-      <div class="row g-3">
-        <div class="col-12 position-relative">
+      <div class="row g-1 justify-content-start align-items-start">
+        <div class="col-5 position-relative">
           <label class="form-label">Search Courses</label>
           <div class="input-group">
             <input type="text" id="search" class="form-control" placeholder="<?= $selected['course_title'] ? h($selected['course_title']) : 'Search ...' ?>">
@@ -300,9 +289,7 @@ if (isPost('clearCsv')) {
         <input type="hidden" name="course_title" id="course_title" value="">
         <input type="hidden" name="module_title" value="<?= h($selected['module_title'] ?? '') ?>">
 
-
-
-        <div class="col-md-6">
+        <div class="col-md-4">
           <label class="form-label">Learning Modules</label>
           <select id="moduleSelect" name="module_code" class="form-select" required>
             <?php if ($selected['module_code']): ?>
@@ -313,7 +300,7 @@ if (isPost('clearCsv')) {
           </select>
         </div>
 
-        <div class="col-md-6">
+        <div class="col-md-2">
           <label class="form-label">Learning Modes</label>
           <select id="modeSelect" class="form-select" required>
             <?php if ($selected['learning_mode']): ?>
@@ -323,10 +310,10 @@ if (isPost('clearCsv')) {
             <?php endif; ?>
           </select>
           <input type="hidden" name="learning_mode" id="learning_mode" value="<?= h($selected['learning_mode']) ?>">
-          <div id="modeDetails" class="small mt-2"></div>
+          <div id="modeDetails" class="small"></div>
         </div>
 
-        <div class="col-12">
+        <div class="col-1">
           <button class="btn btn-primary" name="loadTemplate" type="submit">Load Template</button>
           <!-- <a class="btn btn-outline-secondary" href="/admin/course/master_temp.php">Create/Edit Templates</a> -->
         </div>
@@ -350,7 +337,7 @@ if (isPost('clearCsv')) {
 
           <!-- Cohort code builder -->
           <div class="row g-3 mb-2">
-            <div class="col-md-4">
+            <div class="col-md-2">
               <label class="form-label">Cohort Suffix</label>
               <input type="text" id="cohort_suffix" class="form-control" placeholder="MMYY (0825)">
             </div>
@@ -359,104 +346,111 @@ if (isPost('clearCsv')) {
               <input type="text" id="cohort_code_display" class="form-control" placeholder="auto-generated" readonly>
               <input type="hidden" name="cohort_code" id="cohort_code_hidden">
             </div>
+
           </div>
 
-          <div class="col-md-3">
-            <label for="start_date" class="form-label">Start Date</label>
-            <input type="text" id="start_date" name="start_date" class="form-control" placeholder="dd/mm/yyyy" required>
-          </div>
 
-          <div class="col-md-4">
-            <label class="form-label d-block">Day Pattern (choose days)</label>
-            <div class="d-flex flex-wrap gap-3">
-              <?php foreach (['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as $d): ?>
-                <label class="form-check form-check-inline">
-                  <input class="form-check-input" type="checkbox" name="days[]" value="<?= $d ?>">
-                  <span class="form-check-label"><?= $d ?></span>
-                </label>
-              <?php endforeach; ?>
+          <div class="col-11 d-flex flex-row gap-2">
+
+
+            <div class="col-md-2">
+              <label for="start_date" class="form-label">Start Date</label>
+              <input type="text" id="start_date" name="start_date" class="form-control" placeholder="dd/mm/yyyy" required>
             </div>
-          </div>
 
-          <div class="col-md-5">
-            <label class="form-label">Countries (Public Holidays)</label>
-
-            <div class="dropdown w-100">
-              <button class="btn btn-outline-primary w-100 d-flex justify-content-between align-items-center"
-                type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" id="countriesDropdown" aria-expanded="false">
-                <span id="countriesSummary">Select countries…</span>
-                <span class="badge text-bg-secondary" id="countriesCount">0</span>
-              </button>
-
-              <div class="dropdown-menu p-3 w-100 shadow">
-                <input type="text" class="form-control form-control-sm mb-2" id="countrySearch" placeholder="Search country…">
-
-                <div id="countriesList" class="d-grid gap-2" style="max-height:220px; overflow:auto;">
-                  <label class="form-check">
-                    <input class="form-check-input country-check" type="checkbox" value="SG" data-label="Singapore">
-                    <span class="form-check-label">Singapore</span>
+            <div class="col-md-3">
+              <label class="form-label d-block">Day Pattern (choose days)</label>
+              <div class="d-flex flex-wrap gap-3">
+                <?php foreach (['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as $d): ?>
+                  <label class="form-check form-check-inline">
+                    <input class="form-check-input" type="checkbox" name="days[]" value="<?= $d ?>">
+                    <span class="form-check-label"><?= $d ?></span>
                   </label>
-                  <label class="form-check">
-                    <input class="form-check-input country-check" type="checkbox" value="IN" data-label="India">
-                    <span class="form-check-label">India</span>
-                  </label>
-                  <label class="form-check">
-                    <input class="form-check-input country-check" type="checkbox" value="LK" data-label="Sri Lanka">
-                    <span class="form-check-label">Sri Lanka</span>
-                  </label>
-                  <label class="form-check">
-                    <input class="form-check-input country-check" type="checkbox" value="BD" data-label="Bangladesh">
-                    <span class="form-check-label">Bangladesh</span>
-                  </label>
-                  <label class="form-check">
-                    <input class="form-check-input country-check" type="checkbox" value="MM" data-label="Myanmar">
-                    <span class="form-check-label">Myanmar</span>
-                  </label>
-                  <label class="form-check">
-                    <input class="form-check-input country-check" type="checkbox" value="PH" data-label="Philippines">
-                    <span class="form-check-label">Philippines</span>
-                  </label>
-                  <label class="form-check">
-                    <input class="form-check-input country-check" type="checkbox" value="MY" data-label="Malaysia">
-                    <span class="form-check-label">Malaysia</span>
-                  </label>
-                </div>
-
-
-                <div class="d-flex gap-2 mt-2">
-                  <button type="button" class="btn btn-sm btn-light" id="selectAllCountries">Select all</button>
-                  <button type="button" class="btn btn-sm btn-light" id="clearCountries">Clear</button>
-                  <!-- <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" data-bs-toggle="dropdown">Done</button> -->
-                </div>
+                <?php endforeach; ?>
               </div>
             </div>
 
-            <!-- badges of selected countries -->
-            <div class="mt-2 d-flex flex-wrap gap-2" id="selectedCountryBadges"></div>
+            <div class="col-md-3">
+              <label class="form-label">Countries (Public Holidays)</label>
 
-            <!-- hidden inputs that actually submit with the form -->
-            <div id="countriesHidden"></div>
+              <div class="dropdown w-100">
+                <button class="btn btn-outline-primary w-100 d-flex justify-content-between align-items-center"
+                  type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" id="countriesDropdown" aria-expanded="false">
+                  <span id="countriesSummary">Select countries…</span>
+                  <span class="badge text-bg-secondary" id="countriesCount">0</span>
+                </button>
 
-            <div class="small-note mt-1">
-              We’ll skip any holiday that appears in <em>any</em> selected country.
+                <div class="dropdown-menu p-3 w-100 shadow">
+                  <input type="text" class="form-control form-control-sm mb-2" id="countrySearch" placeholder="Search country…">
+
+                  <div id="countriesList" class="d-grid gap-2" style="max-height:220px; overflow:auto;">
+                    <label class="form-check">
+                      <input class="form-check-input country-check" type="checkbox" value="SG" data-label="Singapore">
+                      <span class="form-check-label">Singapore</span>
+                    </label>
+                    <label class="form-check">
+                      <input class="form-check-input country-check" type="checkbox" value="IN" data-label="India">
+                      <span class="form-check-label">India</span>
+                    </label>
+                    <label class="form-check">
+                      <input class="form-check-input country-check" type="checkbox" value="LK" data-label="Sri Lanka">
+                      <span class="form-check-label">Sri Lanka</span>
+                    </label>
+                    <label class="form-check">
+                      <input class="form-check-input country-check" type="checkbox" value="BD" data-label="Bangladesh">
+                      <span class="form-check-label">Bangladesh</span>
+                    </label>
+                    <label class="form-check">
+                      <input class="form-check-input country-check" type="checkbox" value="MM" data-label="Myanmar">
+                      <span class="form-check-label">Myanmar</span>
+                    </label>
+                    <label class="form-check">
+                      <input class="form-check-input country-check" type="checkbox" value="PH" data-label="Philippines">
+                      <span class="form-check-label">Philippines</span>
+                    </label>
+                    <label class="form-check">
+                      <input class="form-check-input country-check" type="checkbox" value="MY" data-label="Malaysia">
+                      <span class="form-check-label">Malaysia</span>
+                    </label>
+                  </div>
+
+
+                  <div class="d-flex gap-2 mt-2">
+                    <button type="button" class="btn btn-sm btn-light" id="selectAllCountries">Select all</button>
+                    <button type="button" class="btn btn-sm btn-light" id="clearCountries">Clear</button>
+                    <!-- <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" data-bs-toggle="dropdown">Done</button> -->
+                  </div>
+                </div>
+              </div>
+
+              <!-- badges of selected countries -->
+              <div class="mt-2 d-flex flex-wrap gap-2" id="selectedCountryBadges"></div>
+
+              <!-- hidden inputs that actually submit with the form -->
+              <div id="countriesHidden"></div>
+
+              <div class="small-note mt-1">
+                We’ll skip any holiday that appears in <em>any</em> selected country.
+              </div>
+            </div>
+
+            <div class="col-md-3">
+              <label class="form-label">Start Time & End Time (Sync rows)</label>
+              <div class="input-group">
+                <input type="time" class="form-control" name="custom_start">
+                <span class="input-group-text">to</span>
+                <input type="time" class="form-control" name="custom_end">
+              </div>
+              <div class="small-note">Set both Start and End Time</div>
             </div>
           </div>
-
-          <div class="col-md-4">
-            <label class="form-label">Start Time & End Time (Sync rows)</label>
-            <div class="input-group">
-              <input type="time" class="form-control" name="custom_start">
-              <span class="input-group-text">to</span>
-              <input type="time" class="form-control" name="custom_end">
-            </div>
-            <div class="small-note">Set both Start and End Time</div>
-          </div>
-
-
-          <div class="col-12">
+          <div class="col-1 justify-content-end align-items-end d-flex">
             <button class="btn btn-primary" name="generateSchedule" type="submit">Generate</button>
             <?php if (isset($error)): ?><span class="text-danger ms-3"><?= h($error) ?></span><?php endif; ?>
           </div>
+
+
+
         </form>
       </div>
     </div>
@@ -575,8 +569,8 @@ if (isPost('clearCsv')) {
 
           <button class="btn btn-danger" formaction="download_pdf.php" formmethod="post">Download PDF</button>
           <button class="btn btn-primary" formaction="download_excel.php" formmethod="post">Download Excel</button>
-          <button class="btn btn-primary" formaction="" formmethod="post">View HTML</button>
-          <button class="btn btn-primary" formaction="" formmethod="post">Copy to Messages</button>
+          <!-- <button class="btn btn-primary" formaction="" formmethod="post">View HTML</button>-->
+          <button class="btn btn-primary" formaction="download_sms_xl.php" formmethod="post">Download to SMS Temp</button>
 
           <?php if (!empty($_SESSION['save_msg'])): ?>
             <div class="alert alert-info mt-3 py-2">
@@ -594,6 +588,14 @@ if (isPost('clearCsv')) {
   <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 
   <script>
+    setTimeout(() => {
+      document.querySelectorAll('.alert').forEach(alert => {
+        // Use Bootstrap's built-in dismiss if available
+        const bsAlert = bootstrap.Alert.getOrCreateInstance(alert);
+        bsAlert.close();
+      });
+    }, 3000);
+
     // --- Course search & details ---
     const searchInput = document.getElementById('search');
     const resultsBox = document.getElementById('results');
