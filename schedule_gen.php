@@ -739,12 +739,12 @@ require __DIR__ . '/components/navbar.php';
                 placeholder="dd/mm/yyyy"
                 value="<?= h($_SESSION['meta']['start_date'] ?? '') ?>" required>
             </div>
-            <!-- <div class="col-md-4">
+            <div class="col-md-4">
               <label for="end_date" class="form-label">End Date</label>
               <input type="text" id="end_date" name="end_date" class="form-control"
                 placeholder="dd/mm/yyyy"
                 value="<?= h($_SESSION['meta']['end_date'] ?? '') ?>" required>
-            </div> -->
+            </div>
 
             <!-- NEW: Break (valid days) -->
             <div class="col-md-2">
@@ -798,7 +798,7 @@ require __DIR__ . '/components/navbar.php';
             </div>
           </div>
 
-          <div class="col-6">
+          <div class="col-12">
             <label class="form-label">Countries (Public Holidays)</label>
             <div class="dropdown w-100">
               <button class="btn btn-outline-primary w-100 d-flex justify-content-between align-items-center"
@@ -839,14 +839,14 @@ require __DIR__ . '/components/navbar.php';
           </div>
 
           <!-- Cohort code (optional) -->
-          <!-- <div class="row g-3"> -->
-          <div class="col-md-2">
-            <label class="form-label">Cohort Suffix</label>
-            <input type="text" name="cohort_suffix" id="cohort_suffix" class="form-control"
-              placeholder="MMYY (0825)"
-              value="<?= h($_SESSION['meta']['cohort_suffix'] ?? '') ?>">
+          <div class="row g-3">
+            <div class="col-md-2">
+              <label class="form-label">Cohort Suffix</label>
+              <input type="text" name="cohort_suffix" id="cohort_suffix" class="form-control"
+                placeholder="MMYY (0825)"
+                value="<?= h($_SESSION['meta']['cohort_suffix'] ?? '') ?>">
+            </div>
           </div>
-          <!-- </div> -->
 
 
 
